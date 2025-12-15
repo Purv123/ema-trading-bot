@@ -13,6 +13,7 @@ from database_handler import TradingDatabase
 from backtest_engine import BacktestEngine
 from paper_trading import PaperTradingSimulator
 from ema_algo_trading import EMAStrategy
+from bot_runner import BotRunner
 import time
 import threading
 
@@ -72,12 +73,11 @@ class TradingBotApp:
     def __init__(self):
         self.config_manager = ConfigManager()
         self.db = TradingDatabase()
+        self.bot_runner = BotRunner()
 
         # Initialize session state
         if 'setup_step' not in st.session_state:
             st.session_state.setup_step = 1
-        if 'bot_running' not in st.session_state:
-            st.session_state.bot_running = False
 
     def run(self):
         """Main application router"""
@@ -620,11 +620,15 @@ class TradingBotApp:
         market_config = self.config_manager.get_market_config()
         trading_config = self.config_manager.get_trading_config()
 
+        # Get actual bot status
+        bot_status, bot_mode = self.bot_runner.get_status()
+        is_running = (bot_status == 'running')
+
         # Status display
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            if st.session_state.bot_running:
+            if is_running:
                 st.markdown('<div class="success-box"><h3>🟢 Bot Running</h3></div>',
                            unsafe_allow_html=True)
             else:
@@ -632,7 +636,11 @@ class TradingBotApp:
                            unsafe_allow_html=True)
 
         with col2:
-            st.metric("Mode", "LIVE TRADING" if st.session_state.bot_running else "STOPPED")
+            mode_text = f"{bot_mode.upper()} TRADING" if is_running else "STOPPED"
+            st.metric("Mode", mode_text)
+            if is_running:
+                pid = self.bot_runner.get_bot_pid()
+                st.caption(f"PID: {pid}")
 
         with col3:
             currency = "₹" if market_config['market_type'] == 'stocks' else "$"
@@ -644,23 +652,62 @@ class TradingBotApp:
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            if not st.session_state.bot_running:
+            if not is_running:
                 if st.button("▶️ Start Live Trading", type="primary", use_container_width=True):
                     st.warning("⚠️ Live trading will use real money. Make sure you've tested in paper mode first!")
-                    if st.button("✅ Yes, Start Live Trading"):
-                        st.session_state.bot_running = True
-                        st.success("Live trading started!")
-                        st.rerun()
+                    confirm = st.checkbox("I understand and want to start live trading with real money")
+                    if confirm and st.button("✅ Confirm Start Live Trading"):
+                        success, message = self.bot_runner.start_live_trading()
+                        if success:
+                            st.success(message)
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error(message)
 
         with col2:
-            if st.session_state.bot_running:
-                if st.button("⏸️ Stop Trading", type="secondary", use_container_width=True):
-                    st.session_state.bot_running = False
-                    st.info("Trading stopped")
-                    st.rerun()
+            if is_running:
+                if st.button("⏸️ Stop Bot", type="secondary", use_container_width=True):
+                    success, message = self.bot_runner.stop_bot()
+                    if success:
+                        st.success(message)
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error(message)
 
         with col3:
             if st.button("🔄 Refresh Status", use_container_width=True):
+                st.rerun()
+
+        st.divider()
+
+        # Bot Logs
+        st.subheader("📋 Bot Logs")
+
+        tab1, tab2 = st.tabs(["Live Output", "System Logs"])
+
+        with tab1:
+            st.caption("Real-time bot output (refreshes on page reload)")
+            logs = self.bot_runner.get_output_logs(lines=100)
+            if logs:
+                log_text = "".join(logs)
+                st.code(log_text, language="text")
+            else:
+                st.info("No output logs yet. Start the bot to see logs here.")
+
+        with tab2:
+            st.caption("System logs")
+            logs = self.bot_runner.get_logs(lines=50)
+            if logs:
+                log_text = "".join(logs)
+                st.code(log_text, language="text")
+            else:
+                st.info("No system logs yet.")
+
+        if st.button("🗑️ Clear Logs"):
+            if self.bot_runner.clear_logs():
+                st.success("Logs cleared!")
                 st.rerun()
 
         st.divider()
@@ -692,38 +739,106 @@ class TradingBotApp:
 
         st.info("💡 Paper trading lets you test strategies with simulated money. No real funds at risk!")
 
+        # Get bot status
+        bot_status, bot_mode = self.bot_runner.get_status()
+        is_running = (bot_status == 'running' and bot_mode == 'paper')
+
         col1, col2 = st.columns([2, 1])
 
         with col1:
-            st.subheader("Start Paper Trading")
+            if not is_running:
+                st.subheader("Start Paper Trading")
 
-            market_config = self.config_manager.get_market_config()
-            trading_config = self.config_manager.get_trading_config()
+                market_config = self.config_manager.get_market_config()
+                trading_config = self.config_manager.get_trading_config()
 
-            if market_config['market_type'] == 'stocks':
-                symbol = st.text_input("Symbol", value=market_config['symbol'])
-                exchange = st.selectbox("Exchange", ["NSE", "BSE"],
-                    index=0 if market_config['exchange'] == 'NSE' else 1)
+                if market_config['market_type'] == 'stocks':
+                    symbol = st.text_input("Symbol", value=market_config['symbol'])
+                    exchange = st.selectbox("Exchange", ["NSE", "BSE"],
+                        index=0 if market_config['exchange'] == 'NSE' else 1)
+                else:
+                    symbol = st.selectbox("Crypto Pair",
+                        ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT"],
+                        index=0)
+                    exchange = "Crypto"
+
+                capital = st.number_input("Virtual Capital", value=int(trading_config['capital']),
+                    step=1000)
+                risk = st.slider("Risk per Trade (%)", 0.5, 5.0, trading_config['risk_per_trade']*100, 0.5)
+
+                if st.button("▶️ Start Paper Trading", type="primary"):
+                    # Update config with selected parameters
+                    self.config_manager.save_trading_config(capital=capital, risk_per_trade=risk)
+                    if market_config['market_type'] == 'stocks':
+                        self.config_manager.set_config('stocks_symbol', symbol)
+                        self.config_manager.set_config('stocks_exchange', exchange)
+                    else:
+                        self.config_manager.set_config('crypto_symbol', symbol)
+
+                    # Start paper trading
+                    success, message = self.bot_runner.start_paper_trading()
+                    if success:
+                        st.success(message)
+                        st.info("📊 Paper trading is now running! Refresh the page to see live logs below.")
+                        time.sleep(2)
+                        st.rerun()
+                    else:
+                        st.error(message)
             else:
-                symbol = st.selectbox("Crypto Pair",
-                    ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT"],
-                    index=0)
-                exchange = "Crypto"
+                st.subheader("Paper Trading Active")
+                st.success("✅ Paper trading bot is currently running!")
 
-            capital = st.number_input("Virtual Capital", value=int(trading_config['capital']),
-                step=1000)
-            risk = st.slider("Risk per Trade (%)", 0.5, 5.0, trading_config['risk_per_trade']*100, 0.5)
-
-            if st.button("▶️ Start Paper Trading", type="primary"):
-                st.success(f"Paper trading started for {symbol}")
-                st.info("Paper trading is running in the background. Check the Dashboard for results!")
+                if st.button("⏸️ Stop Paper Trading", type="secondary"):
+                    success, message = self.bot_runner.stop_bot()
+                    if success:
+                        st.success(message)
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error(message)
 
         with col2:
             st.subheader("Current Status")
-            st.metric("Mode", "Paper Trading")
-            st.metric("Status", "Ready")
+            market_config = self.config_manager.get_market_config()
+            trading_config = self.config_manager.get_trading_config()
             currency = "₹" if market_config['market_type'] == 'stocks' else "$"
-            st.metric("Virtual Balance", f"{currency}{capital:,}")
+
+            if is_running:
+                st.metric("Status", "🟢 Running")
+                pid = self.bot_runner.get_bot_pid()
+                st.caption(f"Process ID: {pid}")
+            else:
+                st.metric("Status", "🔴 Stopped")
+
+            st.metric("Mode", "Paper Trading")
+            st.metric("Virtual Balance", f"{currency}{trading_config['capital']:,}")
+
+        # Show logs if bot is running
+        if is_running:
+            st.divider()
+            st.subheader("📋 Live Bot Logs")
+
+            tab1, tab2 = st.tabs(["Bot Output", "System Logs"])
+
+            with tab1:
+                st.caption("Live trading bot output (auto-refreshes when you reload page)")
+                logs = self.bot_runner.get_output_logs(lines=100)
+                if logs:
+                    log_text = "".join(logs)
+                    st.code(log_text, language="text")
+
+                    if st.button("🔄 Refresh Logs"):
+                        st.rerun()
+                else:
+                    st.info("Waiting for bot output...")
+
+            with tab2:
+                logs = self.bot_runner.get_logs(lines=30)
+                if logs:
+                    log_text = "".join(logs)
+                    st.code(log_text, language="text")
+                else:
+                    st.info("No system logs yet.")
 
     def show_backtesting(self):
         """Backtesting page"""
