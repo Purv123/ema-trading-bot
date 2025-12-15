@@ -12,6 +12,8 @@ from database_handler import TradingDatabase
 from backtest_engine import BacktestEngine, load_historical_data
 from paper_trading import PaperTradingSimulator
 import time
+import threading
+import queue
 
 
 # Page configuration
@@ -37,6 +39,82 @@ st.markdown("""
     }
     </style>
     """, unsafe_allow_html=True)
+
+
+def run_paper_trading_background(symbol, exchange, capital, risk, log_queue, stop_event):
+    """
+    Run paper trading in a background thread
+
+    Parameters:
+    -----------
+    symbol : str
+        Trading symbol
+    exchange : str
+        Exchange
+    capital : float
+        Initial capital
+    risk : float
+        Risk per trade
+    log_queue : queue.Queue
+        Queue for logging messages
+    stop_event : threading.Event
+        Event to signal stop
+    """
+    try:
+        simulator = PaperTradingSimulator(initial_capital=capital, risk_per_trade=risk)
+
+        log_queue.put({
+            'timestamp': datetime.now(),
+            'level': 'INFO',
+            'message': f'Paper trading started for {symbol} on {exchange} with ₹{capital:,.0f} capital'
+        })
+
+        log_queue.put({
+            'timestamp': datetime.now(),
+            'level': 'INFO',
+            'message': 'This is simulated trading - No real money involved!'
+        })
+
+        while not stop_event.is_set():
+            # Log monitoring status
+            log_queue.put({
+                'timestamp': datetime.now(),
+                'level': 'INFO',
+                'message': f'Monitoring {symbol}... (Waiting for market data and signals)'
+            })
+
+            # Get account status
+            status = simulator.get_account_status()
+            log_queue.put({
+                'timestamp': datetime.now(),
+                'level': 'INFO',
+                'message': f'Account Status - Capital: ₹{status["current_capital"]:,.2f}, P&L: ₹{status["pnl"]:+,.2f} ({status["pnl_percent"]:+.2f}%), Open Positions: {status["open_positions"]}'
+            })
+
+            # In production, you would:
+            # 1. Fetch live market data
+            # 2. Check for trading signals
+            # 3. Execute paper trades
+            # 4. Monitor and exit positions
+
+            # Wait for 30 seconds before next check (using stop_event for interruptible sleep)
+            if stop_event.wait(30):
+                break
+
+        # Final status
+        status = simulator.get_account_status()
+        log_queue.put({
+            'timestamp': datetime.now(),
+            'level': 'SUCCESS',
+            'message': f'Paper trading stopped. Final P&L: ₹{status["pnl"]:+,.2f} ({status["pnl_percent"]:+.2f}%)'
+        })
+
+    except Exception as e:
+        log_queue.put({
+            'timestamp': datetime.now(),
+            'level': 'ERROR',
+            'message': f'Error in paper trading: {str(e)}'
+        })
 
 
 class TradingDashboard:
@@ -190,28 +268,142 @@ class TradingDashboard:
     def show_paper_trading(self):
         """Paper trading interface"""
         st.title("📝 Paper Trading")
-        
+
         st.info("💡 Paper trading lets you test strategies with simulated money. No real funds are at risk!")
-        
+
+        # Initialize session state
+        if 'paper_trading_running' not in st.session_state:
+            st.session_state.paper_trading_running = False
+        if 'paper_trading_thread' not in st.session_state:
+            st.session_state.paper_trading_thread = None
+        if 'paper_trading_log_queue' not in st.session_state:
+            st.session_state.paper_trading_log_queue = queue.Queue()
+        if 'paper_trading_stop_event' not in st.session_state:
+            st.session_state.paper_trading_stop_event = threading.Event()
+        if 'paper_trading_logs' not in st.session_state:
+            st.session_state.paper_trading_logs = []
+        if 'paper_trading_config' not in st.session_state:
+            st.session_state.paper_trading_config = {
+                'symbol': 'SBIN',
+                'exchange': 'NSE',
+                'capital': 10000,
+                'risk': 2.0
+            }
+
         col1, col2 = st.columns([2, 1])
-        
+
         with col1:
-            st.subheader("Start Paper Trading")
-            
-            symbol = st.text_input("Symbol", value="SBIN")
-            exchange = st.selectbox("Exchange", ["NSE", "BSE"])
-            capital = st.number_input("Initial Capital (₹)", value=10000, step=1000)
-            risk = st.slider("Risk per Trade (%)", 1.0, 5.0, 2.0, 0.5)
-            
-            if st.button("▶️ Start Paper Trading", type="primary"):
-                st.success(f"Paper trading started for {symbol} on {exchange}")
-                st.info("This feature is fully functional in the standalone application.")
-        
+            st.subheader("Configuration")
+
+            # Disable inputs if paper trading is running
+            disabled = st.session_state.paper_trading_running
+
+            symbol = st.text_input("Symbol", value=st.session_state.paper_trading_config['symbol'], disabled=disabled)
+            exchange = st.selectbox("Exchange", ["NSE", "BSE"],
+                                   index=0 if st.session_state.paper_trading_config['exchange'] == 'NSE' else 1,
+                                   disabled=disabled)
+            capital = st.number_input("Initial Capital (₹)",
+                                     value=st.session_state.paper_trading_config['capital'],
+                                     step=1000, disabled=disabled)
+            risk = st.slider("Risk per Trade (%)", 1.0, 5.0,
+                           st.session_state.paper_trading_config['risk'], 0.5, disabled=disabled)
+
+            # Start/Stop buttons
+            col_btn1, col_btn2 = st.columns(2)
+
+            with col_btn1:
+                if not st.session_state.paper_trading_running:
+                    if st.button("▶️ Start Paper Trading", type="primary", use_container_width=True):
+                        # Save configuration
+                        st.session_state.paper_trading_config = {
+                            'symbol': symbol,
+                            'exchange': exchange,
+                            'capital': capital,
+                            'risk': risk
+                        }
+
+                        # Reset logs and stop event
+                        st.session_state.paper_trading_logs = []
+                        st.session_state.paper_trading_stop_event.clear()
+
+                        # Start paper trading thread
+                        st.session_state.paper_trading_thread = threading.Thread(
+                            target=run_paper_trading_background,
+                            args=(symbol, exchange, capital, risk/100,
+                                  st.session_state.paper_trading_log_queue,
+                                  st.session_state.paper_trading_stop_event),
+                            daemon=True
+                        )
+                        st.session_state.paper_trading_thread.start()
+                        st.session_state.paper_trading_running = True
+                        st.success(f"Paper trading started for {symbol} on {exchange}!")
+                        st.rerun()
+
+            with col_btn2:
+                if st.session_state.paper_trading_running:
+                    if st.button("⏹️ Stop Paper Trading", type="secondary", use_container_width=True):
+                        # Signal the thread to stop
+                        st.session_state.paper_trading_stop_event.set()
+                        st.session_state.paper_trading_running = False
+                        st.warning("Stopping paper trading...")
+                        st.rerun()
+
         with col2:
             st.subheader("Current Status")
             st.metric("Mode", "Paper Trading")
-            st.metric("Status", "Ready")
-            st.metric("Virtual Balance", f"₹{capital:,.0f}")
+
+            if st.session_state.paper_trading_running:
+                st.metric("Status", "🟢 Running")
+            else:
+                st.metric("Status", "⚪ Stopped")
+
+            st.metric("Virtual Balance", f"₹{st.session_state.paper_trading_config['capital']:,.0f}")
+
+            if st.session_state.paper_trading_running:
+                # Auto-refresh button
+                if st.button("🔄 Refresh Logs", use_container_width=True):
+                    st.rerun()
+
+        # Logs section
+        st.markdown("---")
+        st.subheader("📋 Activity Logs")
+
+        # Read logs from queue
+        try:
+            while not st.session_state.paper_trading_log_queue.empty():
+                log_entry = st.session_state.paper_trading_log_queue.get_nowait()
+                st.session_state.paper_trading_logs.append(log_entry)
+        except queue.Empty:
+            pass
+
+        # Display logs
+        if st.session_state.paper_trading_logs:
+            log_container = st.container()
+            with log_container:
+                # Show last 50 logs
+                for log in st.session_state.paper_trading_logs[-50:]:
+                    timestamp_str = log['timestamp'].strftime('%Y-%m-%d %H:%M:%S')
+                    level = log['level']
+                    message = log['message']
+
+                    if level == 'ERROR':
+                        st.error(f"[{timestamp_str}] {message}")
+                    elif level == 'SUCCESS':
+                        st.success(f"[{timestamp_str}] {message}")
+                    elif level == 'WARNING':
+                        st.warning(f"[{timestamp_str}] {message}")
+                    else:
+                        st.info(f"[{timestamp_str}] {message}")
+        else:
+            if st.session_state.paper_trading_running:
+                st.info("Waiting for logs... Click 'Refresh Logs' to update.")
+            else:
+                st.info("No logs yet. Start paper trading to see activity logs here.")
+
+        # Auto-refresh every 5 seconds if running
+        if st.session_state.paper_trading_running:
+            time.sleep(2)
+            st.rerun()
     
     def show_backtesting(self):
         """Backtesting interface"""
