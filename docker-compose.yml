@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  trading-bot:
+    build: .
+    container_name: ema-trading-bot
+    ports:
+      - "8501:8501"  # Streamlit dashboard
+    volumes:
+      - ./config.ini:/app/config.ini:ro  # Config file (read-only)
+      - ./data:/app/data  # Historical data
+      - ./logs:/app/logs  # Log files
+      - ./trading_data.db:/app/trading_data.db  # Database
+      - ./backtest_results:/app/backtest_results  # Backtest results
+      - ./charts:/app/charts  # Generated charts
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - trading-network
+
+  # Optional: Paper trading service
+  paper-trading:
+    build: .
+    container_name: ema-paper-trading
+    command: python main.py --paper
+    volumes:
+      - ./config.ini:/app/config.ini:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./trading_data.db:/app/trading_data.db
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - trading-network
+    profiles:
+      - paper
+
+  # Optional: Live trading service
+  live-trading:
+    build: .
+    container_name: ema-live-trading
+    command: python main.py --live-stocks
+    volumes:
+      - ./config.ini:/app/config.ini:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./trading_data.db:/app/trading_data.db
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - trading-network
+    profiles:
+      - live
+
+networks:
+  trading-network:
+    driver: bridge
+
+# Usage:
+# Dashboard only:        docker-compose up -d
+# With paper trading:    docker-compose --profile paper up -d
+# With live trading:     docker-compose --profile live up -d
+# All services:          docker-compose --profile paper --profile live up -d
