@@ -1,34 +1,37 @@
 # 🤖 EMA Trading Bot
 
-**Professional Algorithmic Trading Platform for Stocks & Cryptocurrencies**
+**Automated Trading Bot with Complete Web UI Configuration**
 
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Python](https://img.shields.io/badge/Python-3.7%2B-blue.svg)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B.svg)](https://streamlit.io/)
 
-> Automated trading bot using the proven 9-15 EMA crossover strategy with advanced confirmations. Trade stocks through Angel One/Zerodha and cryptocurrencies through Mudrex. Features include live trading, paper trading, backtesting, and a beautiful web dashboard.
+> Automated trading bot using the proven 9-15 EMA crossover strategy. Trade Indian stocks or cryptocurrencies with **everything configured through an easy-to-use web interface** - no config files needed!
 
 ---
 
 ## ✨ Features
 
-### 🎯 **Multi-Asset Support**
-- 📊 **Stocks**: Angel One & Zerodha integration
-- 💰 **Crypto**: Mudrex (BTC, ETH, 100+ coins)
-- 🔄 Same strategy across all markets
+### 🎯 **Complete UI Configuration**
+- 🎨 **No Config Files!** - Everything configured through web UI
+- 🚀 **Setup Wizard** - Step-by-step guided setup
+- 🔄 **Easy Reconfiguration** - Change settings anytime
+- 💾 **Automatic Saving** - All settings saved to database
+
+### 📊 **Multi-Market Support**
+- **Indian Stock Market** - Trade NSE/BSE stocks with Angel One/Zerodha
+- **Cryptocurrency** - Trade BTC, ETH, and more on Mudrex/Binance
+- **Market Selection** - Choose your market through UI
 
 ### 🚀 **Trading Modes**
-- **Live Trading**: Real money, real markets
-- **Paper Trading**: Risk-free practice with virtual money
-- **Backtesting**: Test strategies on historical data
+- **Live Trading** - Real money, real markets
+- **Paper Trading** - Risk-free practice with virtual money
+- **Backtesting** - Test strategies on historical data
 
-### 📈 **Advanced Platform**
-- **Web Dashboard**: Beautiful Streamlit interface
-- **Database**: SQLite for trade history & analytics
-- **Risk Management**: Auto position sizing & stop-loss
-- **Analytics**: Performance metrics, equity curves, drawdown charts
-- **Alerts**: Email & Telegram notifications
+### 📈 **Professional Dashboard**
+- **Real-time Monitoring** - Track performance live
+- **Beautiful Charts** - Equity curves, P&L graphs
+- **Trade History** - Complete trading journal
+- **Performance Metrics** - Win rate, profit factor, Sharpe ratio
 
 ---
 
@@ -36,66 +39,88 @@
 
 ### Installation
 
-#### Option 1: Automated Setup
-
-**Linux/Mac:**
-```bash
-git clone https://github.com/YOUR_USERNAME/ema-trading-bot.git
-cd ema-trading-bot
-chmod +x setup.sh
-./setup.sh
-```
-
-**Windows:**
-```bash
-git clone https://github.com/YOUR_USERNAME/ema-trading-bot.git
-cd ema-trading-bot
-setup.bat
-```
-
-#### Option 2: Manual Setup
-
 ```bash
 # Install dependencies
 pip install -r requirements.txt
-
-# Copy config template
-cp config.ini.example config.ini
-
-# Edit with your API credentials
-nano config.ini
 ```
 
-### 🎨 Launch Dashboard
+### 🎨 Launch the Application
 
 ```bash
-python main.py --dashboard
+streamlit run app.py
 ```
 
-Dashboard opens at: **http://localhost:8501**
+The app will open in your browser at: **http://localhost:8501**
+
+### ✅ Complete Setup Wizard
+
+On first launch, you'll be guided through:
+
+1. **Step 1: Choose Market**
+   - Select Indian Stock Market or Cryptocurrency
+
+2. **Step 2: Configure API**
+   - Enter your broker/exchange credentials
+   - All saved securely in database
+
+3. **Step 3: Set Trading Parameters**
+   - Define your capital
+   - Set risk per trade (1-5%)
+
+4. **Step 4: Strategy Settings**
+   - Customize EMA periods
+   - Adjust RSI parameters
+   - Set risk-reward ratio
+
+5. **Step 5: Done!**
+   - Dashboard ready to use
+   - Start with paper trading
 
 ---
 
-## 📖 Usage
+## 📖 How to Use
+
+### First Time Setup
 
 ```bash
-# Web Dashboard
+streamlit run app.py
+```
+
+Follow the setup wizard to configure everything through the UI!
+
+### Using the Dashboard
+
+After setup, you get access to:
+
+- **🏠 Dashboard** - View trading performance and stats
+- **▶️ Trading Control** - Start/stop live trading
+- **📝 Paper Trading** - Practice with virtual money
+- **🔬 Backtesting** - Test on historical data
+- **⚙️ Settings** - Update configuration anytime
+- **🔄 Reconfigure** - Run setup wizard again
+
+### Recommended Workflow
+
+1. **Complete Initial Setup** through the wizard
+2. **Start Paper Trading** to test the strategy risk-free
+3. **Run Backtests** on historical data
+4. **Monitor Performance** for a few days
+5. **Go Live** when confident (start small!)
+
+---
+
+## 📖 Old CLI Interface (Deprecated)
+
+The old command-line interface (`main.py`) is still available but deprecated:
+
+```bash
+# Old way (deprecated)
 python main.py --dashboard
-
-# Paper Trading (practice)
 python main.py --paper
-
-# Live Trading (stocks)
 python main.py --live-stocks
 
-# Live Trading (crypto)
-python main.py --live-crypto
-
-# Backtest
-python main.py --backtest data.csv
-
-# Performance Summary
-python main.py --performance
+# New way (recommended)
+streamlit run app.py
 ```
 
 ---
