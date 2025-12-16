@@ -74,9 +74,10 @@ def main():
 
 def simulate_paper_trading(symbol, capital, risk, crypto=False):
     """
-    Simulate realistic paper trading with price generation and signal detection
+    Paper trading with REAL market data from exchanges
     """
     from ema_algo_trading import EMAStrategy
+    from market_data_fetcher import get_market_data_fetcher
     import pandas as pd
     import numpy as np
 
@@ -86,24 +87,31 @@ def simulate_paper_trading(symbol, capital, risk, crypto=False):
     logger.info("")
 
     strategy = EMAStrategy(capital=capital, risk_per_trade=risk)
+    fetcher = get_market_data_fetcher()
 
-    # Initialize price tracking
-    base_price = 3000 if symbol.startswith('ETH') else 50000 if symbol.startswith('BTC') else 100
-    prices = []
-    timestamps = []
+    # Fetch initial real market data
+    logger.info("📊 Fetching REAL market data from exchange...")
+    logger.info(f"🌐 Symbol: {symbol}")
 
-    # Generate initial historical data for EMA calculation
-    logger.info("📊 Generating initial market data for analysis...")
-    np.random.seed(int(time.time()) % 10000)
+    if crypto:
+        # Fetch real crypto data from Binance
+        df = fetcher.fetch_crypto_klines(symbol, interval='5m', limit=50)
 
-    for i in range(50):
-        # Random walk for realistic price movement
-        change = np.random.randn() * (base_price * 0.01)
-        base_price = max(base_price + change, base_price * 0.5)
-        prices.append(base_price)
-        timestamps.append(datetime.now())
+        if df is None:
+            logger.error("❌ Failed to fetch market data from exchange!")
+            logger.error("Falling back to simulated data...")
+            # Fallback to simulation if API fails
+            use_real_data = False
+        else:
+            use_real_data = True
+            logger.info(f"✅ Fetched {len(df)} real candles from Binance")
+            logger.info(f"   Latest Price: ${df['close'].iloc[-1]:,.2f}")
+            logger.info(f"   Time Range: {df['timestamp'].iloc[0].strftime('%H:%M')} to {df['timestamp'].iloc[-1].strftime('%H:%M')}")
+    else:
+        # For stocks, we'd need a proper data provider
+        logger.warning("⚠️  Real stock data not available - using simulation")
+        use_real_data = False
 
-    logger.info(f"✅ Initialized with 50 candles. Current price: ${base_price:,.2f}")
     logger.info("")
     logger.info("="*80)
     logger.info("🤖 BOT IS NOW LIVE - Monitoring market for trading signals...")
@@ -112,34 +120,57 @@ def simulate_paper_trading(symbol, capital, risk, crypto=False):
 
     iteration = 0
     trades_count = 0
+    last_price = None
 
     while iteration < 1000:
         try:
             iteration += 1
             current_time = datetime.now().strftime('%H:%M:%S')
 
-            # Generate new realistic price (random walk)
-            price_change_pct = np.random.randn() * 0.5  # 0.5% volatility
-            price_change = base_price * (price_change_pct / 100)
-            base_price = max(base_price + price_change, base_price * 0.8)
+            # Fetch fresh data from exchange
+            if use_real_data and crypto:
+                # Fetch latest candles from Binance
+                fresh_df = fetcher.fetch_crypto_klines(symbol, interval='5m', limit=100)
 
-            prices.append(base_price)
-            timestamps.append(datetime.now())
+                if fresh_df is not None:
+                    df = fresh_df
+                else:
+                    logger.warning("⚠️  Failed to fetch fresh data, using cached data")
+                    time.sleep(60)
+                    continue
+            else:
+                # Fallback: generate simulated data
+                if iteration == 1:
+                    base_price = 3000 if symbol.startswith('ETH') else 50000 if symbol.startswith('BTC') else 100
+                    prices = []
+                    timestamps = []
+                    np.random.seed(int(time.time()) % 10000)
 
-            # Keep only last 100 candles
-            if len(prices) > 100:
-                prices = prices[-100:]
-                timestamps = timestamps[-100:]
+                    for i in range(50):
+                        change = np.random.randn() * (base_price * 0.01)
+                        base_price = max(base_price + change, base_price * 0.5)
+                        prices.append(base_price)
+                        timestamps.append(datetime.now())
 
-            # Create DataFrame for analysis
-            df = pd.DataFrame({
-                'timestamp': timestamps,
-                'close': prices,
-                'open': [p * (1 + np.random.randn() * 0.001) for p in prices],
-                'high': [p * (1 + abs(np.random.randn() * 0.005)) for p in prices],
-                'low': [p * (1 - abs(np.random.randn() * 0.005)) for p in prices],
-                'volume': [np.random.randint(1000, 10000) for _ in prices]
-            })
+                price_change_pct = np.random.randn() * 0.5
+                price_change = base_price * (price_change_pct / 100)
+                base_price = max(base_price + price_change, base_price * 0.8)
+
+                prices.append(base_price)
+                timestamps.append(datetime.now())
+
+                if len(prices) > 100:
+                    prices = prices[-100:]
+                    timestamps = timestamps[-100:]
+
+                df = pd.DataFrame({
+                    'timestamp': timestamps,
+                    'close': prices,
+                    'open': [p * (1 + np.random.randn() * 0.001) for p in prices],
+                    'high': [p * (1 + abs(np.random.randn() * 0.005)) for p in prices],
+                    'low': [p * (1 - abs(np.random.randn() * 0.005)) for p in prices],
+                    'volume': [np.random.randint(1000, 10000) for _ in prices]
+                })
 
             # Calculate indicators
             df['ema_9'] = df['close'].ewm(span=9, adjust=False).mean()
@@ -157,9 +188,23 @@ def simulate_paper_trading(symbol, capital, risk, crypto=False):
             ema_15 = df['ema_15'].iloc[-1]
             rsi = df['rsi'].iloc[-1]
 
-            # Log every 5 iterations (every ~2.5 minutes)
-            if iteration % 5 == 0:
-                logger.info(f"⏰ [{current_time}] Market Update:")
+            # Calculate price change
+            if last_price is not None:
+                price_change = current_price - last_price
+                price_change_pct = (price_change / last_price) * 100
+            else:
+                price_change = 0
+                price_change_pct = 0
+
+            last_price = current_price
+
+            # Log every 1 iteration when using real data (every 30-60s)
+            # or every 5 iterations when simulating (every ~2.5 minutes)
+            log_frequency = 1 if use_real_data else 5
+
+            if iteration % log_frequency == 0:
+                data_source = "🌐 LIVE DATA" if use_real_data else "📊 SIMULATED"
+                logger.info(f"⏰ [{current_time}] Market Update ({data_source}):")
                 logger.info(f"   💵 Price: ${current_price:,.2f} ({price_change:+.2f}, {price_change_pct:+.2f}%)")
                 logger.info(f"   📈 EMA-9: ${ema_9:,.2f} | EMA-15: ${ema_15:,.2f}")
                 logger.info(f"   📊 RSI: {rsi:.1f}")
@@ -210,8 +255,11 @@ def simulate_paper_trading(symbol, capital, risk, crypto=False):
                     logger.info("="*80)
                     logger.info("")
 
-            # Wait 30 seconds before next iteration (simulates 30s candles)
-            time.sleep(30)
+            # Wait before next iteration
+            # Real data: 60 seconds (fetches every minute)
+            # Simulated: 30 seconds (generates candle every 30s)
+            sleep_time = 60 if use_real_data else 30
+            time.sleep(sleep_time)
 
         except KeyboardInterrupt:
             logger.info("")
