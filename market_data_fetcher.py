@@ -70,20 +70,34 @@ class MarketDataFetcher:
         """
         try:
             # Convert symbol format
-            binance_symbol = symbol.replace('/', '')
+            binance_symbol = symbol.replace('/', '').upper()
+
+            print(f"[DEBUG] Fetching {binance_symbol} from Binance...")
+            print(f"[DEBUG] Interval: {interval}, Limit: {limit}")
 
             # Fetch klines from Binance
-            url = f"https://api.binance.com/api/v3/klines"
+            url = "https://api.binance.com/api/v3/klines"
             params = {
                 'symbol': binance_symbol,
                 'interval': interval,
                 'limit': limit
             }
 
+            print(f"[DEBUG] URL: {url}")
+            print(f"[DEBUG] Params: {params}")
+
             response = self.session.get(url, params=params, timeout=10)
+
+            print(f"[DEBUG] Response status: {response.status_code}")
 
             if response.status_code == 200:
                 data = response.json()
+
+                if not data or len(data) == 0:
+                    print(f"[DEBUG] Empty data returned from Binance")
+                    return None
+
+                print(f"[DEBUG] Got {len(data)} candles from Binance")
 
                 # Parse klines data
                 df = pd.DataFrame(data, columns=[
@@ -103,12 +117,19 @@ class MarketDataFetcher:
                 # Keep only needed columns
                 df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
 
-                return df
+                print(f"[DEBUG] Processed DataFrame with {len(df)} rows")
+                print(f"[DEBUG] Latest price: ${df['close'].iloc[-1]:,.2f}")
 
-            return None
+                return df
+            else:
+                print(f"[DEBUG] Bad status code: {response.status_code}")
+                print(f"[DEBUG] Response: {response.text[:200]}")
+                return None
 
         except Exception as e:
-            print(f"Error fetching klines: {e}")
+            print(f"[ERROR] Exception fetching klines: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def fetch_stock_price(self, symbol, exchange='NSE'):
