@@ -77,7 +77,7 @@ def simulate_paper_trading(symbol, capital, risk, crypto=False):
     Paper trading with REAL market data from exchanges
     """
     from ema_algo_trading import EMAStrategy
-    from market_data_fetcher import get_market_data_fetcher
+    from market_data_fetcher import MarketDataFetcher
     import pandas as pd
     import numpy as np
 
@@ -87,14 +87,32 @@ def simulate_paper_trading(symbol, capital, risk, crypto=False):
     logger.info("")
 
     strategy = EMAStrategy(capital=capital, risk_per_trade=risk)
-    fetcher = get_market_data_fetcher()
+
+    # Load Mudrex credentials from config
+    config = ConfigManager()
+    market_config = config.get_market_config()
+
+    # Initialize fetcher with Mudrex credentials if available
+    if crypto and market_config.get('market_type') == 'crypto':
+        api_key = market_config.get('api_key', '')
+        api_secret = market_config.get('api_secret', '')
+        exchange = market_config.get('exchange', 'binance')
+
+        if api_key and api_secret and exchange.lower() == 'mudrex':
+            logger.info("🔑 Using Mudrex API credentials from config")
+            fetcher = MarketDataFetcher(api_key=api_key, api_secret=api_secret, use_mudrex=True)
+        else:
+            logger.info("📡 Using Binance public API (no credentials)")
+            fetcher = MarketDataFetcher()
+    else:
+        fetcher = MarketDataFetcher()
 
     # Fetch initial real market data
     logger.info("📊 Fetching REAL market data from exchange...")
     logger.info(f"🌐 Symbol: {symbol}")
 
     if crypto:
-        # Fetch real crypto data from Binance
+        # Fetch real crypto data from Mudrex or Binance
         df = fetcher.fetch_crypto_klines(symbol, interval='5m', limit=50)
 
         if df is None:
@@ -104,7 +122,8 @@ def simulate_paper_trading(symbol, capital, risk, crypto=False):
             use_real_data = False
         else:
             use_real_data = True
-            logger.info(f"✅ Fetched {len(df)} real candles from Binance")
+            exchange_name = "Mudrex" if fetcher.use_mudrex else "Binance"
+            logger.info(f"✅ Fetched {len(df)} real candles from {exchange_name}")
             logger.info(f"   Latest Price: ${df['close'].iloc[-1]:,.2f}")
             logger.info(f"   Time Range: {df['timestamp'].iloc[0].strftime('%H:%M')} to {df['timestamp'].iloc[-1].strftime('%H:%M')}")
     else:
@@ -129,13 +148,14 @@ def simulate_paper_trading(symbol, capital, risk, crypto=False):
 
             # Fetch fresh data from exchange
             if use_real_data and crypto:
-                # Fetch latest candles from Binance
+                # Fetch latest candles from Mudrex or Binance
                 fresh_df = fetcher.fetch_crypto_klines(symbol, interval='5m', limit=100)
 
                 if fresh_df is not None:
                     df = fresh_df
                 else:
-                    logger.warning("⚠️  Failed to fetch fresh data, using cached data")
+                    exchange_name = "Mudrex" if fetcher.use_mudrex else "Binance"
+                    logger.warning(f"⚠️  Failed to fetch fresh data from {exchange_name}, using cached data")
                     time.sleep(60)
                     continue
             else:
