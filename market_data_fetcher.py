@@ -15,7 +15,7 @@ import json
 class MarketDataFetcher:
     """Fetch real market data from exchanges"""
 
-    def __init__(self, api_key=None, api_secret=None, use_mudrex=False):
+    def __init__(self, api_key=None, api_secret=None, use_mudrex=False, coingecko_api_key=None):
         self.session = requests.Session()
         self.api_key = api_key
         self.api_secret = api_secret
@@ -24,6 +24,11 @@ class MarketDataFetcher:
         self.mudrex_base_url = "https://trade.mudrex.com/fapi/v1"
         # CoinGecko for free market data
         self.coingecko_base_url = "https://api.coingecko.com/api/v3"
+        self.coingecko_api_key = coingecko_api_key or "CG-GgCnwTc2xkSQ2mDTHaaii7mt"  # Demo API key
+
+        # Cache to avoid rate limits (cache data for 5 minutes)
+        self._cache = {}
+        self._cache_duration = 300  # 5 minutes in seconds
 
     def fetch_crypto_price(self, symbol):
         """
@@ -108,6 +113,7 @@ class MarketDataFetcher:
     def fetch_crypto_klines(self, symbol, interval='1m', limit=100):
         """
         Fetch historical klines/candles from CoinGecko (free, reliable)
+        Uses intelligent caching to avoid rate limits.
 
         Parameters:
         -----------
@@ -122,6 +128,20 @@ class MarketDataFetcher:
         --------
         pandas.DataFrame with OHLCV data
         """
+        # Check cache first to avoid rate limits
+        cache_key = f"{symbol}_{interval}_{limit}"
+        current_time = time.time()
+
+        if cache_key in self._cache:
+            cached_data, cached_time = self._cache[cache_key]
+            cache_age = current_time - cached_time
+
+            if cache_age < self._cache_duration:
+                print(f"[CACHE] Using cached data ({int(cache_age)}s old, fresh for {int(self._cache_duration - cache_age)}s more)")
+                return cached_data
+            else:
+                print(f"[CACHE] Cache expired ({int(cache_age)}s old), fetching fresh data...")
+
         # Use CoinGecko for market data (free, no auth needed, not geo-blocked)
         print(f"[INFO] Fetching market data from CoinGecko (free, reliable)")
         df = self._fetch_coingecko_klines(symbol, interval, limit)
@@ -130,6 +150,11 @@ class MarketDataFetcher:
         if df is None:
             print(f"[WARN] CoinGecko failed, trying Binance...")
             df = self._fetch_binance_klines(symbol, interval, limit)
+
+        # Cache the result if successful
+        if df is not None:
+            self._cache[cache_key] = (df.copy(), current_time)
+            print(f"[CACHE] Data cached for {self._cache_duration}s")
 
         return df
 
@@ -176,14 +201,35 @@ class MarketDataFetcher:
             # Don't specify interval - CoinGecko selects automatically based on days
             params = {
                 'vs_currency': 'usd',
-                'days': days
+                'days': days,
+                'x_cg_demo_api_key': self.coingecko_api_key  # Use demo API key for higher limits
             }
 
             print(f"[DEBUG] CoinGecko request: {url}")
-            print(f"[DEBUG] Params: {params}")
+            print(f"[DEBUG] Params (with API key): vs_currency=usd, days={days}")
+            print(f"[DEBUG] Using CoinGecko Demo API key for higher rate limits")
 
-            response = self.session.get(url, params=params, timeout=10)
-            print(f"[DEBUG] Response status: {response.status_code}")
+            # Retry logic for rate limits (429 errors)
+            max_retries = 3
+            retry_delay = 2  # Start with 2 seconds
+
+            for attempt in range(max_retries):
+                response = self.session.get(url, params=params, timeout=10)
+                print(f"[DEBUG] Response status: {response.status_code}")
+
+                if response.status_code == 200:
+                    break
+                elif response.status_code == 429:
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
+                        print(f"[WARN] Rate limit hit, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                        time.sleep(wait_time)
+                    else:
+                        print(f"[ERROR] Rate limit persists after {max_retries} attempts")
+                        return None
+                else:
+                    # Other errors, don't retry
+                    break
 
             if response.status_code == 200:
                 data = response.json()
