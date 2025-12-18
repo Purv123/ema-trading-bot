@@ -158,21 +158,25 @@ class MarketDataFetcher:
             url = f"{self.coingecko_base_url}/coins/{coin_id}/market_chart"
 
             # Map interval to days
+            # CoinGecko automatically selects granularity based on days:
+            # - 1 day = 5-minute intervals (288 data points)
+            # - 2-90 days = hourly intervals
+            # - 91+ days = daily intervals
             interval_days_map = {
-                '1m': 1,    # 1 day of 5-min data
-                '5m': 1,    # 1 day of 5-min data
-                '15m': 7,   # 7 days of hourly data
-                '1h': 7,    # 7 days of hourly data
-                '4h': 30,   # 30 days of hourly data
-                '1d': 90,   # 90 days of daily data
+                '1m': 1,    # 1 day = 5-min intervals (auto)
+                '5m': 1,    # 1 day = 5-min intervals (auto)
+                '15m': 7,   # 7 days = hourly intervals (auto)
+                '1h': 7,    # 7 days = hourly intervals (auto)
+                '4h': 30,   # 30 days = hourly intervals (auto)
+                '1d': 90,   # 90 days = daily intervals (auto)
             }
 
             days = interval_days_map.get(interval, 1)
 
+            # Don't specify interval - CoinGecko selects automatically based on days
             params = {
                 'vs_currency': 'usd',
-                'days': days,
-                'interval': 'daily' if days > 30 else '5minute' if days == 1 else 'hourly'
+                'days': days
             }
 
             print(f"[DEBUG] CoinGecko request: {url}")
