@@ -20,7 +20,8 @@ class MarketDataFetcher:
         self.api_key = api_key
         self.api_secret = api_secret
         self.use_mudrex = use_mudrex
-        self.mudrex_base_url = "https://api.mudrex.com/v1"
+        # Correct Mudrex base URL (not api.mudrex.com)
+        self.mudrex_base_url = "https://mudrex.com/api/v1"
 
     def fetch_crypto_price(self, symbol):
         """
@@ -119,9 +120,16 @@ class MarketDataFetcher:
         --------
         pandas.DataFrame with OHLCV data
         """
-        # Use Mudrex if configured
+        # Try Mudrex first if configured
         if self.use_mudrex and self.api_key and self.api_secret:
-            return self._fetch_mudrex_klines(symbol, interval, limit)
+            print(f"[INFO] Attempting to fetch from Mudrex...")
+            df = self._fetch_mudrex_klines(symbol, interval, limit)
+
+            # Fallback to Binance if Mudrex fails
+            if df is None:
+                print(f"[WARN] Mudrex failed, falling back to Binance...")
+                return self._fetch_binance_klines(symbol, interval, limit)
+            return df
         else:
             return self._fetch_binance_klines(symbol, interval, limit)
 
