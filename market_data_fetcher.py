@@ -15,7 +15,7 @@ import json
 class MarketDataFetcher:
     """Fetch real market data from exchanges"""
 
-    def __init__(self, api_key=None, api_secret=None, use_mudrex=False):
+    def __init__(self, api_key=None, api_secret=None, use_mudrex=False, coingecko_api_key=None):
         self.session = requests.Session()
         self.api_key = api_key
         self.api_secret = api_secret
@@ -24,6 +24,7 @@ class MarketDataFetcher:
         self.mudrex_base_url = "https://trade.mudrex.com/fapi/v1"
         # CoinGecko for free market data
         self.coingecko_base_url = "https://api.coingecko.com/api/v3"
+        self.coingecko_api_key = coingecko_api_key or "CG-GgCnwTc2xkSQ2mDTHaaii7mt"  # Demo API key
 
         # Cache to avoid rate limits (cache data for 5 minutes)
         self._cache = {}
@@ -200,11 +201,13 @@ class MarketDataFetcher:
             # Don't specify interval - CoinGecko selects automatically based on days
             params = {
                 'vs_currency': 'usd',
-                'days': days
+                'days': days,
+                'x_cg_demo_api_key': self.coingecko_api_key  # Use demo API key for higher limits
             }
 
             print(f"[DEBUG] CoinGecko request: {url}")
-            print(f"[DEBUG] Params: {params}")
+            print(f"[DEBUG] Params (with API key): vs_currency=usd, days={days}")
+            print(f"[DEBUG] Using CoinGecko Demo API key for higher rate limits")
 
             # Retry logic for rate limits (429 errors)
             max_retries = 3
