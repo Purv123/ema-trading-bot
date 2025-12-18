@@ -261,9 +261,9 @@ def simulate_paper_trading(symbol, capital, risk, crypto=False):
                     logger.info("")
 
             # Wait before next iteration
-            # Real data: 60 seconds (fetches every minute)
-            # Simulated: 30 seconds (generates candle every 30s)
-            sleep_time = 60 if use_real_data else 30
+            # For scalping: check every 30 seconds for quick response
+            # Cache handles rate limiting (fetches fresh data every 60s)
+            sleep_time = 30
             time.sleep(sleep_time)
 
         except KeyboardInterrupt:

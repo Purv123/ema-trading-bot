@@ -26,9 +26,10 @@ class MarketDataFetcher:
         self.coingecko_base_url = "https://api.coingecko.com/api/v3"
         self.coingecko_api_key = coingecko_api_key or "CG-GgCnwTc2xkSQ2mDTHaaii7mt"  # Demo API key
 
-        # Cache to avoid rate limits (cache data for 5 minutes)
+        # Cache to avoid rate limits
+        # Note: CoinGecko updates every 5 minutes anyway, but shorter cache = fresher data
         self._cache = {}
-        self._cache_duration = 300  # 5 minutes in seconds
+        self._cache_duration = 60  # 1 minute - good for scalping strategies
 
     def fetch_crypto_price(self, symbol):
         """
