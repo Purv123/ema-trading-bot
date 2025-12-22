@@ -1,6 +1,7 @@
 """
 Market Data Fetcher
 Fetches real-time market data from various sources
+Supports both REST API (CoinGecko) and WebSocket (Kraken)
 """
 
 import requests
@@ -15,7 +16,7 @@ import json
 class MarketDataFetcher:
     """Fetch real market data from exchanges"""
 
-    def __init__(self, api_key=None, api_secret=None, use_mudrex=False, coingecko_api_key=None):
+    def __init__(self, api_key=None, api_secret=None, use_mudrex=False, coingecko_api_key=None, use_websocket=False):
         self.session = requests.Session()
         self.api_key = api_key
         self.api_secret = api_secret
@@ -25,6 +26,10 @@ class MarketDataFetcher:
         # CoinGecko for free market data
         self.coingecko_base_url = "https://api.coingecko.com/api/v3"
         self.coingecko_api_key = coingecko_api_key or "CG-GgCnwTc2xkSQ2mDTHaaii7mt"  # Demo API key
+
+        # WebSocket support for real-time data
+        self.use_websocket = use_websocket
+        self.ws_client = None
 
         # Cache to avoid rate limits
         # CoinGecko updates data every 5 minutes, so cache for 4.5 min to catch updates quickly
@@ -111,9 +116,46 @@ class MarketDataFetcher:
             traceback.print_exc()
             return None
 
+    def start_websocket(self, symbol='BTC/USDT'):
+        """Start WebSocket connection for real-time streaming data"""
+        if self.ws_client is not None:
+            print("[WS] WebSocket already running")
+            return
+
+        try:
+            from kraken_websocket import KrakenWebSocket
+
+            print(f"[WS] Starting Kraken WebSocket for {symbol}...")
+            self.ws_client = KrakenWebSocket(symbol)
+            self.ws_client.start()
+
+            # Wait for connection
+            time.sleep(3)
+
+            if self.ws_client.is_connected():
+                print(f"[WS] ✅ WebSocket connected! Real-time 1-second updates active")
+                self.use_websocket = True
+            else:
+                print(f"[WS] ⚠️ WebSocket connection failed, falling back to REST API")
+                self.ws_client = None
+                self.use_websocket = False
+
+        except Exception as e:
+            print(f"[WS] ❌ Failed to start WebSocket: {e}")
+            self.ws_client = None
+            self.use_websocket = False
+
+    def stop_websocket(self):
+        """Stop WebSocket connection"""
+        if self.ws_client:
+            self.ws_client.stop()
+            self.ws_client = None
+            self.use_websocket = False
+            print("[WS] WebSocket stopped")
+
     def fetch_crypto_klines(self, symbol, interval='1m', limit=100):
         """
-        Fetch historical klines/candles from CoinGecko (free, reliable)
+        Fetch historical klines/candles from WebSocket or CoinGecko
         Uses intelligent caching to avoid rate limits.
 
         Parameters:
@@ -129,6 +171,17 @@ class MarketDataFetcher:
         --------
         pandas.DataFrame with OHLCV data
         """
+        # Try WebSocket first if enabled and connected
+        if self.use_websocket and self.ws_client and self.ws_client.is_connected():
+            df = self.ws_client.get_candles(limit=limit)
+
+            if df is not None and len(df) > 0:
+                print(f"[WS] Using real-time WebSocket data ({len(df)} candles)")
+                return df
+            else:
+                print(f"[WS] Not enough WebSocket data yet, falling back to REST API")
+
+        # Fall back to REST API (CoinGecko)
         # Check cache first to avoid rate limits
         cache_key = f"{symbol}_{interval}_{limit}"
         current_time = time.time()
