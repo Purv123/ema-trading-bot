@@ -32,9 +32,10 @@ class MarketDataFetcher:
         self.ws_client = None
 
         # Cache to avoid rate limits
-        # CoinGecko updates data every 5 minutes, so cache for 4.5 min to catch updates quickly
+        # When WebSocket is active: short cache (30s) to allow quick transition to WS data
+        # When WebSocket is off: longer cache (270s) aligned with CoinGecko's 5-min updates
         self._cache = {}
-        self._cache_duration = 270  # 4.5 minutes (270 seconds) - catches 5-min updates without waste
+        self._cache_duration = 30 if use_websocket else 270  # Dynamic cache based on WebSocket availability
 
     def fetch_crypto_price(self, symbol):
         """

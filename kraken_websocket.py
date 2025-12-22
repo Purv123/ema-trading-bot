@@ -196,16 +196,24 @@ class KrakenWebSocket:
     def get_candles(self, limit=100):
         """
         Get recent 1-minute candles as DataFrame
+        Includes the current incomplete candle for real-time data
 
         Returns:
         --------
         pandas.DataFrame with OHLCV data
         """
-        if not self.candles:
+        # Combine completed candles + current incomplete candle
+        all_candles = list(self.candles)
+
+        # Add current incomplete candle if we have one
+        if self.current_candle is not None:
+            all_candles.append(self.current_candle)
+
+        if not all_candles:
             return None
 
         # Get last N candles
-        recent_candles = self.candles[-limit:] if len(self.candles) > limit else self.candles
+        recent_candles = all_candles[-limit:] if len(all_candles) > limit else all_candles
 
         if not recent_candles:
             return None
