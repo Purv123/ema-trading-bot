@@ -174,13 +174,36 @@ class MarketDataFetcher:
         """
         # Try WebSocket first if enabled and connected
         if self.use_websocket and self.ws_client and self.ws_client.is_connected():
-            df = self.ws_client.get_candles(limit=limit)
+            df_ws = self.ws_client.get_candles(limit=limit)
 
-            if df is not None and len(df) > 0:
-                print(f"[WS] Using real-time WebSocket data ({len(df)} candles)")
-                return df
+            # If we have at least 15 candles from WebSocket, use it
+            # (Need minimum data for EMA-15 calculation)
+            if df_ws is not None and len(df_ws) >= 15:
+                print(f"[WS] Using real-time WebSocket data ({len(df_ws)} candles)")
+                return df_ws
             else:
-                print(f"[WS] Not enough WebSocket data yet, falling back to REST API")
+                # WebSocket is new, combine with CoinGecko historical data
+                print(f"[WS] WebSocket has {len(df_ws) if df_ws is not None else 0} candles, fetching historical data from CoinGecko...")
+
+                # Get historical data from CoinGecko
+                df_cg = self._fetch_coingecko_klines(symbol, interval, limit)
+
+                if df_cg is not None:
+                    # If we have WebSocket data, append the latest real-time candle
+                    if df_ws is not None and len(df_ws) > 0:
+                        # Take historical from CoinGecko and latest from WebSocket
+                        latest_ws_candle = df_ws.iloc[-1:]
+                        df_combined = pd.concat([df_cg.iloc[:-1], latest_ws_candle], ignore_index=True)
+                        print(f"[HYBRID] Using {len(df_cg)-1} CoinGecko candles + 1 WebSocket candle")
+                        return df_combined
+                    else:
+                        return df_cg
+                else:
+                    # CoinGecko failed, use whatever WebSocket data we have
+                    if df_ws is not None and len(df_ws) > 0:
+                        print(f"[WS] Using available WebSocket data ({len(df_ws)} candles)")
+                        return df_ws
+                    return None
 
         # Fall back to REST API (CoinGecko)
         # Check cache first to avoid rate limits
