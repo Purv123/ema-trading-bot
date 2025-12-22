@@ -129,8 +129,9 @@ class MarketDataFetcher:
             self.ws_client = KrakenWebSocket(symbol)
             self.ws_client.start()
 
-            # Wait for connection
-            time.sleep(3)
+            # Wait for connection and first data (Kraken needs ~5-10 seconds for first ticker)
+            print(f"[WS] Waiting for first ticker data...")
+            time.sleep(8)
 
             if self.ws_client.is_connected():
                 print(f"[WS] ✅ WebSocket connected! Real-time 1-second updates active")
