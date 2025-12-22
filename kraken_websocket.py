@@ -28,7 +28,8 @@ class KrakenWebSocket:
         self.running = False
 
         # Convert symbol format: BTC/USDT -> XBT/USDT (Kraken uses XBT for Bitcoin)
-        self.kraken_symbol = symbol.replace('BTC', 'XBT').replace('/', '')
+        # Keep the slash - Kraken WebSocket expects "XBT/USDT" format
+        self.kraken_symbol = symbol.replace('BTC', 'XBT')
 
         # Store recent trades to build candles
         self.recent_trades = deque(maxlen=1000)
@@ -45,6 +46,17 @@ class KrakenWebSocket:
         """Handle incoming WebSocket messages"""
         try:
             data = json.loads(message)
+
+            # Log subscription confirmations and system messages
+            if isinstance(data, dict):
+                if data.get('event') == 'subscriptionStatus':
+                    if data.get('status') == 'subscribed':
+                        logger.info(f"✅ Successfully subscribed to {data.get('pair')} {data.get('subscription', {}).get('name')}")
+                    else:
+                        logger.warning(f"⚠️ Subscription status: {data}")
+                elif data.get('event') == 'error':
+                    logger.error(f"❌ Kraken error: {data.get('errorMessage')}")
+                return
 
             # Kraken sends different message types
             if isinstance(data, list) and len(data) > 1:
@@ -73,6 +85,7 @@ class KrakenWebSocket:
 
         except Exception as e:
             logger.error(f"Error processing message: {e}")
+            logger.error(f"Message was: {message[:200]}")
 
     def _on_error(self, ws, error):
         """Handle WebSocket errors"""
