@@ -88,14 +88,16 @@ def simulate_paper_trading(symbol, capital, risk, crypto=False):
 
     strategy = EMAStrategy(capital=capital, risk_per_trade=risk)
 
-    # Initialize market data fetcher
-    # Note: Uses CoinGecko for free market data (no API key needed)
-    # Mudrex API is for trade execution only, not market data
-    logger.info("📡 Using CoinGecko for real-time market data (free, reliable)")
-    fetcher = MarketDataFetcher()
+    # Initialize market data fetcher with WebSocket support
+    logger.info("🚀 Initializing market data sources...")
+    fetcher = MarketDataFetcher(use_websocket=True)
+
+    # Try to start WebSocket for real-time 1-second updates
+    logger.info("📡 Attempting to connect to Kraken WebSocket for real-time data...")
+    fetcher.start_websocket(symbol)
 
     # Fetch initial real market data
-    logger.info("📊 Fetching REAL market data from exchange...")
+    logger.info("📊 Fetching initial market data...")
     logger.info(f"🌐 Symbol: {symbol}")
 
     if crypto:
@@ -261,9 +263,9 @@ def simulate_paper_trading(symbol, capital, risk, crypto=False):
                     logger.info("")
 
             # Wait before next iteration
-            # Check every 60 seconds (good balance for 5-minute candles)
-            # Cache prevents wasted API calls (data only updates every 5 min)
-            sleep_time = 60
+            # WebSocket mode: Check every 5 seconds for fast response (data updates every second)
+            # REST API mode: Check every 60 seconds (CoinGecko updates every 5 min)
+            sleep_time = 5 if fetcher.use_websocket else 60
             time.sleep(sleep_time)
 
         except KeyboardInterrupt:
@@ -275,6 +277,11 @@ def simulate_paper_trading(symbol, capital, risk, crypto=False):
             import traceback
             logger.error(traceback.format_exc())
             time.sleep(60)
+
+    # Cleanup: Stop WebSocket connection
+    if fetcher.use_websocket:
+        logger.info("🛑 Stopping WebSocket connection...")
+        fetcher.stop_websocket()
 
     logger.info("")
     logger.info("="*80)
